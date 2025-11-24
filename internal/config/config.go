@@ -31,7 +31,7 @@ func Usage() {
 Commands:
 	list                         List pods then deployments in namespace (connectors)
 	versions                     Show connector pod versions for all deployments in the namespace
-	update <id1> [id2 ... idN]   Restart or upgrade one or more connectors and report before/after versions
+	upgrade <id1> [id2 ... idN]  Upgrade one or more connectors and report before/after versions
 
 Options:
 	-n, --namespace NAMESPACE    Kubernetes namespace (default: twingate-connectors)
@@ -43,8 +43,8 @@ Options:
 Examples:
 	twingate-connector-manager list -n twingate-connectors
 	twingate-connector-manager versions
-	twingate-connector-manager update unique-hyrax
-	twingate-connector-manager update connector-a connector-b connector-c -n twingate-connectors
+	twingate-connector-manager upgrade unique-hyrax
+	twingate-connector-manager upgrade connector-a connector-b connector-c -n twingate-connectors
 
 `)
 }

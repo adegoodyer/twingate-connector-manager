@@ -83,7 +83,7 @@ func coalesce(s, def string) string {
 }
 
 // CmdUpdate restarts N deployments (found by identifier substrings) and reports before/after versions
-func CmdUpdate(c *kube.Client, ids []string, helmRepo string, autoYes bool) error {
+func CmdUpgrade(c *kube.Client, ids []string, helmRepo string, autoYes bool) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("no identifiers provided")
 	}
@@ -142,9 +142,14 @@ func CmdUpdate(c *kube.Client, ids []string, helmRepo string, autoYes bool) erro
 		it.oldVer = v
 	}
 
-	fmt.Println("About to upgrade the following Helm-managed connectors in namespace", c.Namespace)
+	fmt.Printf("About to upgrade the following Helm-managed connectors in namespace %s:\n\n", c.Namespace)
 	for _, it := range items {
-		fmt.Printf("  release: %s, chart: %s, deployment: %s, pod: %s, version: %s\n", it.release, it.chart, it.deploy, coalesce(it.pod, "<none>"), it.oldVer)
+		fmt.Printf("  Release: %s\n", it.release)
+		fmt.Printf("  Chart: %s\n", it.chart)
+		fmt.Printf("  Deployment: %s\n", it.deploy)
+		fmt.Printf("  Pod: %s\n", coalesce(it.pod, "<none>"))
+		fmt.Printf("  Version: %s\n", it.oldVer)
+		fmt.Println()
 	}
 
 	if !confirm("Proceed with upgrading these Helm releases?", autoYes) {
@@ -195,7 +200,7 @@ func CmdUpdate(c *kube.Client, ids []string, helmRepo string, autoYes bool) erro
 	}
 
 	fmt.Println()
-	fmt.Println("Summary for update operation:")
+	fmt.Println("Summary for upgrade operation:")
 	for _, it := range items {
 		fmt.Println("Connector:", it.deploy)
 		fmt.Println("  old version:", it.oldVer)
