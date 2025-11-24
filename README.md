@@ -8,7 +8,7 @@ CLI tool for managing/automating Twingate Connector upgrades within Kubernetes c
 ## Install
 
 ```bash
-go install github.com/adegoodyer/twingate-connector-manager@latest
+go install github.com/adegoodyer/twingate-connector-manager/cmd/twingate-connector-manager@latest
 ```
 
 ## Usage

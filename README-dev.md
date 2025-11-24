@@ -44,7 +44,7 @@ git tag -a latest -m "Latest release" && \
 git push origin latest
 
 # test remote install
-go install github.com/adegoodyer/twingate-connector-manager@latest
+go install github.com/adegoodyer/twingate-connector-manager/cmd/twingate-connector-manager@latest
 
 # run app
 twingate-connector-manager
