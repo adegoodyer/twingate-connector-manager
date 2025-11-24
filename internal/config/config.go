@@ -24,7 +24,7 @@ var (
 
 // Usage prints the tool help. Kept similar to original main.go text.
 func Usage() {
-	fmt.Fprintf(os.Stderr, `Usage: %s [options] <command> [args]
+	fmt.Fprint(os.Stderr, `Usage: twingate-connector-manager [options] <command> [args]
 
 Commands:
   list                         List pods then deployments in namespace (connectors)
@@ -32,17 +32,17 @@ Commands:
   update <id1> <id2>           Restart deployments for two connectors (identifiers) and report before/after versions
 
 Options:
-  -n, --namespace NAMESPACE    Kubernetes namespace (default: %s)
+  -n, --namespace NAMESPACE    Kubernetes namespace (default: twingate-connectors)
   -y, --yes                    Auto-confirm actions
-  -k, --kubectl PATH           Kubectl binary to use (default: %s)
+  -k, --kubectl PATH           Kubectl binary to use (default: kubectl)
   -h, --help                   Show this help and exit
 
 Examples:
-  %s list -n twingate-connectors
-  %s versions
-  %s update observant-beagle unyielding-copperhead -n twingate-connectors
+  twingate-connector-manager   list -n twingate-connectors
+  twingate-connector-manager   versions
+  twingate-connector-manager   update observant-beagle unyielding-copperhead -n twingate-connectors
 
-`, os.Args[0], ns, kubeCmd, os.Args[0], os.Args[0], os.Args[0])
+`)
 }
 
 // ParseFlags parses the CLI flags and returns a Config and a boolean indicating whether help was requested
