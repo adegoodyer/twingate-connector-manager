@@ -34,12 +34,12 @@ func main() {
 			os.Exit(2)
 		}
 	case "update":
-		if len(cfg.Args) < 2 {
-			fmt.Fprintln(os.Stderr, "update requires two identifiers")
+		if len(cfg.Args) < 1 {
+			fmt.Fprintln(os.Stderr, "update requires at least one identifier")
 			config.Usage()
 			os.Exit(2)
 		}
-		if err := commands.CmdUpdate(client, cfg.Args[0], cfg.Args[1], cfg.AutoYes); err != nil {
+		if err := commands.CmdUpdate(client, cfg.Args, cfg.AutoYes); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(2)
 		}

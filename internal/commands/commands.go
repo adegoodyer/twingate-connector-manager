@@ -71,21 +71,49 @@ func coalesce(s, def string) string {
 	return s
 }
 
-// CmdUpdate restarts two deployments (found by identifier substrings) and reports before/after versions
-func CmdUpdate(c *kube.Client, id1, id2 string, autoYes bool) error {
-	d1, _ := c.FindDeployment(id1)
-	d2, _ := c.FindDeployment(id2)
-	if d1 == "" || d2 == "" {
-		return fmt.Errorf("could not find both deployments: d1=%s d2=%s", d1, d2)
+// CmdUpdate restarts N deployments (found by identifier substrings) and reports before/after versions
+func CmdUpdate(c *kube.Client, ids []string, autoYes bool) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("no identifiers provided")
 	}
-	p1, _ := c.FindPodForDeploy(d1)
-	p2, _ := c.FindPodForDeploy(d2)
-	v1old, _ := c.GetVersionFromPod(p1)
-	v2old, _ := c.GetVersionFromPod(p2)
+
+	// Resolve deployments
+	type item struct {
+		id     string
+		deploy string
+		pod    string
+		oldVer string
+		newVer string
+	}
+	items := make([]*item, 0, len(ids))
+	for _, id := range ids {
+		d, _ := c.FindDeployment(id)
+		items = append(items, &item{id: id, deploy: d})
+	}
+
+	// Ensure all deployments found
+	missing := []string{}
+	for _, it := range items {
+		if it.deploy == "" {
+			missing = append(missing, it.id)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("could not find deployments for identifiers: %v", missing)
+	}
+
+	// Get pods and old versions
+	for _, it := range items {
+		p, _ := c.FindPodForDeploy(it.deploy)
+		it.pod = p
+		v, _ := c.GetVersionFromPod(p)
+		it.oldVer = v
+	}
 
 	fmt.Println("About to restart the following deployments in namespace", c.Namespace)
-	fmt.Printf("  %s (pod: %s, version: %s)\n", d1, coalesce(p1, "<none>"), v1old)
-	fmt.Printf("  %s (pod: %s, version: %s)\n", d2, coalesce(p2, "<none>"), v2old)
+	for _, it := range items {
+		fmt.Printf("  %s (pod: %s, version: %s)\n", it.deploy, coalesce(it.pod, "<none>"), it.oldVer)
+	}
 
 	if !confirm("Proceed with restarting these deployments?", autoYes) {
 		fmt.Println("Aborted by user.")
@@ -93,38 +121,33 @@ func CmdUpdate(c *kube.Client, id1, id2 string, autoYes bool) error {
 	}
 
 	steps := []string{}
-	fmt.Println("Restarting", d1)
-	if err := c.RolloutRestart(d1); err != nil {
-		return err
+	for _, it := range items {
+		fmt.Println("Restarting", it.deploy)
+		if err := c.RolloutRestart(it.deploy); err != nil {
+			return err
+		}
+		steps = append(steps, "restarted "+it.deploy)
 	}
-	steps = append(steps, "restarted "+d1)
-
-	fmt.Println("Restarting", d2)
-	if err := c.RolloutRestart(d2); err != nil {
-		return err
-	}
-	steps = append(steps, "restarted "+d2)
 
 	fmt.Println("Waiting for rollouts to complete (timeout 120s each)...")
-	// best-effort waits; ignore errors but run them
-	_ = c.RolloutStatus(d1, "120s")
-	_ = c.RolloutStatus(d2, "120s")
+	for _, it := range items {
+		_ = c.RolloutStatus(it.deploy, "120s")
+	}
 
-	p1n, _ := c.FindPodForDeploy(d1)
-	p2n, _ := c.FindPodForDeploy(d2)
-	v1new, _ := c.GetVersionFromPod(p1n)
-	v2new, _ := c.GetVersionFromPod(p2n)
+	// Get new versions
+	for _, it := range items {
+		p, _ := c.FindPodForDeploy(it.deploy)
+		it.newVer, _ = c.GetVersionFromPod(p)
+	}
 
 	fmt.Println()
 	fmt.Println("Summary for update operation:")
-	fmt.Println("Connector:", d1)
-	fmt.Println("  old version:", v1old)
-	fmt.Println("  new version:", v1new)
-	fmt.Println()
-	fmt.Println("Connector:", d2)
-	fmt.Println("  old version:", v2old)
-	fmt.Println("  new version:", v2new)
-	fmt.Println()
+	for _, it := range items {
+		fmt.Println("Connector:", it.deploy)
+		fmt.Println("  old version:", it.oldVer)
+		fmt.Println("  new version:", it.newVer)
+		fmt.Println()
+	}
 	fmt.Println("Steps taken:")
 	for _, s := range steps {
 		fmt.Println(" -", s)
