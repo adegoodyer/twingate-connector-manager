@@ -83,10 +83,13 @@ func coalesce(s, def string) string {
 }
 
 // CmdUpdate restarts N deployments (found by identifier substrings) and reports before/after versions
-func CmdUpgrade(c *kube.Client, ids []string, helmRepo string, autoYes bool) error {
+func CmdUpgrade(c *kube.Client, ids []string, helmRepo string, setImage string, timeout string, autoYes bool) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("no identifiers provided")
 	}
+
+	// prerequisite note
+	fmt.Println("Note: 'upgrade' requires Helm installed and targets Helm-managed deployments (annotation meta.helm.sh/release-name).")
 
 	// Resolve deployments
 	type item struct {
@@ -165,18 +168,23 @@ func CmdUpgrade(c *kube.Client, ids []string, helmRepo string, autoYes bool) err
 
 	for _, it := range items {
 		fmt.Printf("Upgrading helm release %s (chart: %s/%s)\n", it.release, helmRepo, it.chart)
-		if _, err := c.HelmUpgrade(it.release, helmRepo, it.chart, "120s", ""); err != nil {
+		if _, err := c.HelmUpgrade(it.release, helmRepo, it.chart, timeout, setImage); err != nil {
 			return fmt.Errorf("helm upgrade failed for release %s: %v", it.release, err)
 		}
-		steps = append(steps, "upgraded release "+it.release)
+		steps = append(steps, "upgraded helm release "+it.release)
 		// after upgrade, wait for rollout
-		_ = c.RolloutStatus(it.deploy, "120s")
+		_ = c.RolloutStatus(it.deploy, timeout)
 		steps = append(steps, "waited for rollout "+it.deploy)
 	}
 
+	// Determine polling deadline from timeout string
+	dur, err := time.ParseDuration(timeout)
+	if err != nil || dur <= 0 {
+		dur = 120 * time.Second
+	}
 	// Get new versions — poll until version changes or timeout per item
 	for _, it := range items {
-		deadline := time.Now().Add(120 * time.Second)
+		deadline := time.Now().Add(dur)
 		var last string
 		for time.Now().Before(deadline) {
 			p, _ := c.FindPodForDeploy(it.deploy)

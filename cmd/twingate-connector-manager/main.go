@@ -35,11 +35,11 @@ func main() {
 		}
 	case "upgrade":
 		if len(cfg.Args) < 1 {
-			fmt.Fprintln(os.Stderr, "update requires at least one identifier")
+			fmt.Fprintln(os.Stderr, "upgrade requires at least one identifier")
 			config.Usage()
 			os.Exit(2)
 		}
-		if err := commands.CmdUpgrade(client, cfg.Args, cfg.HelmRepo, cfg.AutoYes); err != nil {
+		if err := commands.CmdUpgrade(client, cfg.Args, cfg.HelmRepo, cfg.SetImage, cfg.Timeout, cfg.AutoYes); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(2)
 		}
