@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/adegoodyer/twingate-connector-manager/internal/kube"
 )
@@ -46,6 +47,16 @@ func CmdVersions(c *kube.Client) error {
 		ver, _ := c.GetVersionFromPod(pod)
 		fmt.Printf("%-40s %s\n", name, ver)
 	}
+
+	// Also print helm releases in the namespace
+	fmt.Println()
+	fmt.Printf("Helm releases in namespace %s:\n", c.Namespace)
+	helmOut, herr := c.HelmList()
+	if herr != nil {
+		fmt.Printf("(helm list failed: %v)\n", herr)
+	} else {
+		fmt.Print(helmOut)
+	}
 	return nil
 }
 
@@ -72,18 +83,20 @@ func coalesce(s, def string) string {
 }
 
 // CmdUpdate restarts N deployments (found by identifier substrings) and reports before/after versions
-func CmdUpdate(c *kube.Client, ids []string, autoYes bool) error {
+func CmdUpdate(c *kube.Client, ids []string, helmRepo string, autoYes bool) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("no identifiers provided")
 	}
 
 	// Resolve deployments
 	type item struct {
-		id     string
-		deploy string
-		pod    string
-		oldVer string
-		newVer string
+		id      string
+		deploy  string
+		release string
+		chart   string
+		pod     string
+		oldVer  string
+		newVer  string
 	}
 	items := make([]*item, 0, len(ids))
 	for _, id := range ids {
@@ -102,6 +115,25 @@ func CmdUpdate(c *kube.Client, ids []string, autoYes bool) error {
 		return fmt.Errorf("could not find deployments for identifiers: %v", missing)
 	}
 
+	// Detect helm releases and chart names for each deployment
+	nonHelm := []string{}
+	for _, it := range items {
+		rel, _ := c.GetHelmReleaseForDeployment(it.deploy)
+		it.release = rel
+		if rel == "" {
+			nonHelm = append(nonHelm, it.deploy)
+			continue
+		}
+		chart, err := c.HelmReleaseChart(rel)
+		if err != nil {
+			return fmt.Errorf("could not determine chart for release %s: %v", rel, err)
+		}
+		it.chart = chart
+	}
+	if len(nonHelm) > 0 {
+		return fmt.Errorf("the following deployments are not helm-managed; this command requires helm-managed deployments: %v", nonHelm)
+	}
+
 	// Get pods and old versions
 	for _, it := range items {
 		p, _ := c.FindPodForDeploy(it.deploy)
@@ -110,34 +142,56 @@ func CmdUpdate(c *kube.Client, ids []string, autoYes bool) error {
 		it.oldVer = v
 	}
 
-	fmt.Println("About to restart the following deployments in namespace", c.Namespace)
+	fmt.Println("About to upgrade the following Helm-managed connectors in namespace", c.Namespace)
 	for _, it := range items {
-		fmt.Printf("  %s (pod: %s, version: %s)\n", it.deploy, coalesce(it.pod, "<none>"), it.oldVer)
+		fmt.Printf("  release: %s, chart: %s, deployment: %s, pod: %s, version: %s\n", it.release, it.chart, it.deploy, coalesce(it.pod, "<none>"), it.oldVer)
 	}
 
-	if !confirm("Proceed with restarting these deployments?", autoYes) {
+	if !confirm("Proceed with upgrading these Helm releases?", autoYes) {
 		fmt.Println("Aborted by user.")
 		return nil
 	}
-
+	// perform helm repo update once and record the step
 	steps := []string{}
+	if err := c.HelmRepoUpdate(); err != nil {
+		return fmt.Errorf("helm repo update failed: %v", err)
+	}
+	steps = append(steps, "helm repo update")
+
 	for _, it := range items {
-		fmt.Println("Restarting", it.deploy)
-		if err := c.RolloutRestart(it.deploy); err != nil {
-			return err
+		fmt.Printf("Upgrading helm release %s (chart: %s/%s)\n", it.release, helmRepo, it.chart)
+		if _, err := c.HelmUpgrade(it.release, helmRepo, it.chart, "120s", ""); err != nil {
+			return fmt.Errorf("helm upgrade failed for release %s: %v", it.release, err)
 		}
-		steps = append(steps, "restarted "+it.deploy)
-	}
-
-	fmt.Println("Waiting for rollouts to complete (timeout 120s each)...")
-	for _, it := range items {
+		steps = append(steps, "upgraded release "+it.release)
+		// after upgrade, wait for rollout
 		_ = c.RolloutStatus(it.deploy, "120s")
+		steps = append(steps, "waited for rollout "+it.deploy)
 	}
 
-	// Get new versions
+	// Get new versions — poll until version changes or timeout per item
 	for _, it := range items {
-		p, _ := c.FindPodForDeploy(it.deploy)
-		it.newVer, _ = c.GetVersionFromPod(p)
+		deadline := time.Now().Add(120 * time.Second)
+		var last string
+		for time.Now().Before(deadline) {
+			p, _ := c.FindPodForDeploy(it.deploy)
+			ver, _ := c.GetVersionFromPod(p)
+			last = ver
+			if ver != "<unknown>" && ver != it.oldVer {
+				it.newVer = ver
+				break
+			}
+			// if old was unknown, accept any known value
+			if it.oldVer == "<unknown>" && ver != "<unknown>" {
+				it.newVer = ver
+				break
+			}
+			time.Sleep(3 * time.Second)
+		}
+		if it.newVer == "" {
+			// set last-seen value (may be "<unknown>")
+			it.newVer = last
+		}
 	}
 
 	fmt.Println()

@@ -39,7 +39,7 @@ func main() {
 			config.Usage()
 			os.Exit(2)
 		}
-		if err := commands.CmdUpdate(client, cfg.Args, cfg.AutoYes); err != nil {
+		if err := commands.CmdUpdate(client, cfg.Args, cfg.HelmRepo, cfg.AutoYes); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(2)
 		}
